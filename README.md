@@ -53,20 +53,34 @@ tv-央视,#genre#
 
 今天实测结果：60 个分组，7332 个频道，tv.txt 共 7451 行（含 59 个组间隔空行）。
 
-## user-agent（tv.m3u 来源）
+## user-agent（虎牙、斗鱼、tv.m3u 来源）
 
-tv.m3u 来源的频道需要 User-Agent `qqlive` 才能播。txt 格式没地方放这个，所以：
+这三类源需要 User-Agent `qqlive` 才能播，否则会被服务器拒绝。你给的这个就是标准写法：
 
-- `tv.txt` 里这些频道保持原样，只写 `频道名,地址`
-- `tv.m3u` 里这些频道在地址前多一行：
+```json
+"header": {
+    "User-Agent": "qqlive"
+}
+```
+
+txt 格式本身没有放 header 的地方，m3u 有两种标准写法，所以两个文件都按各自的写法加，只加在这三类频道上，共 785 条：tv.m3u 来源的全部 224 条，sdzb 的斗鱼💖主播 198 条、虎牙💖主播 342 条、瑜伽💖矫正 21 条。其他频道不加。
+
+- `tv.m3u` 里，每条在 `#EXTINF` 和地址之间加两行，两种写法都写，播放器认哪种用哪种，不认的会忽略：
   ```
-  #EXTINF:-1 group-title="tv-央视",CCTV-1
+  #EXTINF:-1 group-title="sdzb-虎牙💖主播",【虎牙】xxx
   #EXTVLCOPT:http-user-agent=qqlive
-  https://...
+  #EXTHTTP:{"User-Agent":"qqlive"}
+  http://81.69.15.31:35455/huya/xxx
   ```
-  只有 tv.m3u 来源的 224 条有这一行，其他来源的没有。
+  `#EXTVLCOPT` 是 VLC / iptv-org 的标准写法，`#EXTHTTP` 就是你给的那个 JSON header 的写法，是 TVBox / TiviMate / Kodi 认的。
+- `tv.txt` 里，每条地址后面加 `|User-Agent=qqlive`（Kodi 风格的内联写法）：
+  ```
+  【虎牙】xxx,http://81.69.15.31:35455/huya/xxx|User-Agent=qqlive
+  【斗鱼】xxx,http://81.69.15.31:35455/douyu/xxx|User-Agent=qqlive
+  CCTV1综合,https://mursor.ottiptv.cc/...|User-Agent=qqlive
+  ```
 
-用支持 `#EXTVLCOPT` 的播放器（比如 VLC / TVBox 类）播 `tv.m3u` 就能带上这个 UA；播 `tv.txt` 的话如果播不了 tv- 开头的频道，换 `tv.m3u` 试试。
+怎么用：优先用 `tv.m3u`，它对播放器的兼容性最好；如果你的播放器只支持 txt，就用 `tv.txt`，支持 `|` 后缀的播放器（TVBox、Kodi 系）能读到这个 UA。如果某个播放器两种都不认，就在播放器设置里手动把全局 User-Agent 设成 `qqlive`，或者换一个支持 `#EXTHTTP` 的播放器（TVBox、TiviMate、VLC）。
 
 ## 怎么放到你的仓库
 
