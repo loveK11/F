@@ -43,12 +43,24 @@ Grouping rule (every group prefixed):
   from different sources.
 - Groups are separated by one blank line in the txt output.
 
-user-agent for tv.m3u channels:
-  Channels that come from tv.m3u need User-Agent "qqlive" to
-  play. The txt format has no place for that, so the m3u
-  output adds, for those channels only:
+user-agent for Huya / Douyu / tv.m3u channels:
+  These streams need User-Agent "qqlive" to play, otherwise
+  they are rejected. The header the user gave:
+    "header": {"User-Agent": "qqlive"}
+  is the #EXTHTTP JSON form, so the m3u output writes BOTH
+  standard forms for those channels, between #EXTINF and URL:
     #EXTVLCOPT:http-user-agent=qqlive
-  before the URL line. Other sources get no such line.
+    #EXTHTTP:{"User-Agent":"qqlive"}
+  #EXTVLCOPT is the VLC / iptv-org standard, #EXTHTTP is
+  the TVBox / TiviMate / Kodi JSON-header form. Players
+  ignore the tag they do not understand, so writing both
+  covers both families. The txt format has no header field,
+  so there the URL gets the Kodi-style inline suffix:
+    频道名,地址|User-Agent=qqlive
+  Other channels get no UA line/suffix.
+  UA is needed for: every channel from tv.m3u (224), plus
+  sdzb's 斗鱼💖主播 (198), 虎牙💖主播 (342) and 瑜伽💖矫正 (21)
+  — 785 channels in total.
   Usage: python3 scripts/merge_tv.py tv.txt [tv.m3u]
 """
 import re
@@ -82,8 +94,12 @@ PREFIX = {
 # The adult group "🔞成人9+9⁺_0000" found in iTV.txt is excluded by default.
 EXCLUDE_GROUPS = {"🔞成人9+9⁺_0000"}
 
-# User-Agent required by streams coming from tv.m3u.
-TV_M3U_USER_AGENT = "qqlive"
+# User-Agent required by Huya / Douyu / tv.m3u streams.
+USER_AGENT = "qqlive"
+
+# Prefixed groups (from sdzb.txt) that need the UA above.
+# tv.m3u channels need it too, regardless of group.
+UA_GROUPS = {"sdzb-斗鱼💖主播", "sdzb-虎牙💖主播", "sdzb-瑜伽💖矫正"}
 
 GROUP_RE = re.compile(r'group-title="([^"]*)"')
 
@@ -118,7 +134,7 @@ def parse_txt(text, groups, order, seen, prefix):
             continue
         if group_orig in EXCLUDE_GROUPS:
             continue
-        add(groups, order, seen, group, name, url, from_tv_m3u=False)
+        add(groups, order, seen, group, name, url, needs_ua=group in UA_GROUPS)
 
 def parse_m3u(text, groups, order, seen, prefix):
     lines = [l.strip() for l in text.splitlines()]
@@ -143,12 +159,12 @@ def parse_m3u(text, groups, order, seen, prefix):
                     break
                 j += 1
             if name and url and group_orig not in EXCLUDE_GROUPS:
-                add(groups, order, seen, group, name, url, from_tv_m3u=True)
+                add(groups, order, seen, group, name, url, needs_ua=True)
             i = j + 1
             continue
         i += 1
 
-def add(groups, order, seen, group, name, url, from_tv_m3u=False):
+def add(groups, order, seen, group, name, url, needs_ua=False):
     key = (group, name, url)
     if key in seen:
         return
@@ -156,7 +172,7 @@ def add(groups, order, seen, group, name, url, from_tv_m3u=False):
     if group not in groups:
         groups[group] = []
         order.append(group)
-    groups[group].append((name, url, from_tv_m3u))
+    groups[group].append((name, url, needs_ua))
 
 def main():
     out = sys.argv[1] if len(sys.argv) > 1 else "tv.txt"
@@ -183,11 +199,15 @@ def main():
                 f.write("\n")
             first = False
             f.write(f"{group},#genre#\n")
-            for name, url, _from_tv in channels:
-                f.write(f"{name},{url}\n")
+            for name, url, needs_ua in channels:
+                if needs_ua:
+                    f.write(f"{name},{url}|User-Agent={USER_AGENT}\n")
+                else:
+                    f.write(f"{name},{url}\n")
 
     total = sum(len(v) for v in groups.values())
-    print(f"groups={len(order)} channels={total} -> {out}", file=sys.stderr)
+    ua_total = sum(1 for v in groups.values() for _, _, u in v if u)
+    print(f"groups={len(order)} channels={total} ua_channels={ua_total} -> {out}", file=sys.stderr)
 
     if out_m3u:
         with open(out_m3u, "w", encoding="utf-8", newline="\n") as f:
@@ -196,12 +216,13 @@ def main():
                 channels = groups[group]
                 if not channels:
                     continue
-                for name, url, from_tv in channels:
+                for name, url, needs_ua in channels:
                     f.write(f'#EXTINF:-1 group-title="{group}",{name}\n')
-                    if from_tv:
-                        f.write(f"#EXTVLCOPT:http-user-agent={TV_M3U_USER_AGENT}\n")
+                    if needs_ua:
+                        f.write(f"#EXTVLCOPT:http-user-agent={USER_AGENT}\n")
+                        f.write(f'#EXTHTTP:{{"User-Agent":"{USER_AGENT}"}}\n')
                     f.write(f"{url}\n")
-        print(f"groups={len(order)} channels={total} -> {out_m3u}", file=sys.stderr)
+        print(f"groups={len(order)} channels={total} ua_channels={ua_total} -> {out_m3u}", file=sys.stderr)
 
 if __name__ == "__main__":
     main()
