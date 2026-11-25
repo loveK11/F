@@ -23,8 +23,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Merge upstream sources into tv.txt
-        run: python3 scripts/merge_tv.py /tmp/tv.txt
+      - name: Merge upstream sources into tv.txt and tv.m3u
+        run: python3 scripts/merge_tv.py /tmp/tv.txt /tmp/tv.m3u
 
       - name: Commit to live branch if changed
         run: |
@@ -37,7 +37,8 @@ jobs:
             git checkout -b live
           fi
           cp /tmp/tv.txt ./tv.txt
-          git add tv.txt
+          cp /tmp/tv.m3u ./tv.m3u
+          git add tv.txt tv.m3u
           if git diff --cached --quiet; then
             echo "No changes, skip commit."
           else
