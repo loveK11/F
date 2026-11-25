@@ -1,13 +1,14 @@
 # TV 直播源自动合并同步
 
 上游：`a2256569/tv`
-目标：`loveK11/F`，输出到 `live` 分支的 `tv.txt`
+目标：`loveK11/F`，输出到 `live` 分支的 `tv.txt` 和 `tv.m3u`
 
 ## 包含的文件
 
 - `.github/workflows/sync-tv.yml` — GitHub Actions 定时任务
 - `scripts/merge_tv.py` — 合并脚本
 - `tv.txt` — 用今天（2026-11-25）的上游文件本地跑出来的合并示例
+- `tv.m3u` — 同一份合并的 M3U 版，tv.m3u 来源的频道带 user-agent
 
 ## 合并规则
 
@@ -23,29 +24,49 @@
 | sdzb.txt | 同上 |
 | tv.m3u | `#EXTINF` + `group-title` 转成 `频道名,地址` |
 
-分组规则：只给每个源文件的**第一个分组**加来源前缀，后面的分组保持原名，例如：
+分组规则：**每个分组都加来源前缀**，各来源的同名分组分开，例如：
 
 ```
 LNYDQWT-4K频道,#genre#
-...
-<空一行>
-央视频道,#genre#          <- LNYDQWT 的第二个分组，不加前缀
-...
-<空一行>
-SXG-央视频道,#genre#      <- SXG 的第一个分组，加前缀
-...
-<空一行>
-卫视频道,#genre#          <- SXG 的第二个分组，不加前缀
+LNYDQWT-央视频道,#genre#
+SXG-央视频道,#genre#
+SXG-卫视频道,#genre#
+ZB-东北地区,#genre#
+ZB-央视频道,#genre#
+ZB-卫视频道,#genre#
+iTV-4K频道,#genre#
+lnlt-央视频道,#genre#
+lnlt-卫视频道,#genre#
+lnlt-省内频道,#genre#
+lnlt-晴彩频道,#genre#
+lnlt-CHC电影频道,#genre#
+tv-央视,#genre#
 ```
 
 前缀是去掉后缀的文件名：LNYDQWT、SXG、ZB、iTV、lnlt、sdzb、tv。
-不带前缀的同名分组会合并到同一个分组下，按首次出现顺序排。
+
+为什么不能只给第一个分组加前缀：2026-11-25 试过一次，只给每文件第一个分组加前缀，其他分组合并到同一个不带前缀的分组下，结果 SXG-卫视频道、ZB-央视频道、ZB-卫视频道、lnlt-央视频道/卫视频道/省内/晴彩/CHC 这些分组在文件里找不到了；而且去重按不带前缀的分组算，iTV 的频道地址和 LNYDQWT 相同就被当成重复删掉，iTV 只剩 38 条。改回全部加前缀后，iTV 恢复到 320 条。
 
 - 组与组之间空一行，文件开头和结尾不留多余空行
-- 同一个最终分组里，完全相同的（频道名，地址）只保留一次
+- 同一个带前缀的分组里，完全相同的（频道名，地址）只保留一次
 - 默认跳过 `iTV.txt` 里的成人分组 `🔞成人9+9⁺_0000`（这个分组有 586 条），想收录就把 `scripts/merge_tv.py` 里 `EXCLUDE_GROUPS` 那一行删掉
 
-今天实测结果：45 个分组，7050 个频道，共 7139 行（含 44 个组间隔空行）。
+今天实测结果：60 个分组，7332 个频道，tv.txt 共 7451 行（含 59 个组间隔空行）。
+
+## user-agent（tv.m3u 来源）
+
+tv.m3u 来源的频道需要 User-Agent `qqlive` 才能播。txt 格式没地方放这个，所以：
+
+- `tv.txt` 里这些频道保持原样，只写 `频道名,地址`
+- `tv.m3u` 里这些频道在地址前多一行：
+  ```
+  #EXTINF:-1 group-title="tv-央视",CCTV-1
+  #EXTVLCOPT:http-user-agent=qqlive
+  https://...
+  ```
+  只有 tv.m3u 来源的 224 条有这一行，其他来源的没有。
+
+用支持 `#EXTVLCOPT` 的播放器（比如 VLC / TVBox 类）播 `tv.m3u` 就能带上这个 UA；播 `tv.txt` 的话如果播不了 tv- 开头的频道，换 `tv.m3u` 试试。
 
 ## 怎么放到你的仓库
 
@@ -55,7 +76,7 @@ SXG-央视频道,#genre#      <- SXG 的第一个分组，加前缀
 2. 点 `Add file` → `Create new file`，文件名填 `scripts/merge_tv.py`，粘贴本包里同名文件的内容，提交
 3. 再同样新建 `.github/workflows/sync-tv.yml`，粘贴本包里同名文件的内容，提交
 4. 去仓库的 `Actions` 标签页，如果提示要开启 Actions 就点启用
-5. 在左侧找到 `Sync TV`，点 `Run workflow` 手动跑一次，第一次就会自动创建 `live` 分支并生成 `tv.txt`
+5. 在左侧找到 `Sync TV`，点 `Run workflow` 手动跑一次，第一次就会自动创建 `live` 分支并生成 `tv.txt` 和 `tv.m3u`
 
 之后每天北京时间 10:00 自动跑一次（`cron: '0 2 * * *'`）。上游没变就不提交，上游变了就自动更新 `live` 分支。
 
@@ -65,10 +86,11 @@ SXG-央视频道,#genre#      <- SXG 的第一个分组，加前缀
 
 ```
 https://raw.githubusercontent.com/loveK11/F/live/tv.txt
+https://raw.githubusercontent.com/loveK11/F/live/tv.m3u
 ```
 
 ## 本地自己跑（可选）
 
 ```bash
-python3 scripts/merge_tv.py tv.txt
+python3 scripts/merge_tv.py tv.txt tv.m3u
 ```
