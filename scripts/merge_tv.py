@@ -11,15 +11,18 @@ Output format (same as GT9527/mytv tv.txt):
   <频道名>,<播放地址>
   ...
 
-Grouping rule: the group name is prefixed with the source name,
-so same-named groups from different files stay separate, e.g.
-  LNYDQWT-4K频道,#genre#
-  SXG-央视频道,#genre#
-  ZB-东北地区,#genre#
-  iTV-4K频道,#genre#
-  lnlt-4K频道,#genre#
-  sdzb-河南酒店源,#genre#
-  tv-央视,#genre#
+Grouping rule: only the FIRST group of each source file gets
+the source prefix. All later groups in the same file keep
+their original name, e.g.
+  LNYDQWT-4K频道,#genre#   <- first group of LNYDQWT.txt
+  央视频道,#genre#          <- second group of LNYDQWT.txt, no prefix
+  SXG-央视频道,#genre#      <- first group of SXG
+  卫视频道,#genre#          <- second group of SXG, no prefix
+  ZB-东北地区,#genre#       <- first group of ZB.txt
+  tv-4K频道,#genre#         <- first group of tv.m3u
+
+Plain groups with the same name from different files are
+merged under one heading, in first-appearance order.
 
 - .txt / no-extension files are already in that format.
 - tv.m3u (#EXTINF + group-title) is converted to the same format.
@@ -72,15 +75,29 @@ def fetch(name):
         return r.read().decode("utf-8", errors="replace")
 
 def parse_txt(text, groups, order, seen, prefix):
+    # Only the first distinct group in this file gets the prefix.
+    mapping = {}
+    first_done = False
+
+    def resolve(group_orig):
+        nonlocal first_done
+        if group_orig not in mapping:
+            if not first_done:
+                mapping[group_orig] = prefixed(prefix, group_orig)
+                first_done = True
+            else:
+                mapping[group_orig] = group_orig
+        return mapping[group_orig]
+
     group_orig = "其他"
-    group = prefixed(prefix, group_orig)
+    group = None
     for raw in text.splitlines():
         line = raw.strip()
         if not line:
             continue
         if line.endswith(",#genre#"):
             group_orig = line.rsplit(",", 1)[0].strip() or "其他"
-            group = prefixed(prefix, group_orig)
+            group = resolve(group_orig)
             if group not in groups:
                 groups[group] = []
                 order.append(group)
@@ -93,20 +110,35 @@ def parse_txt(text, groups, order, seen, prefix):
             continue
         if group_orig in EXCLUDE_GROUPS:
             continue
+        if group is None:
+            group = resolve(group_orig)
         add(groups, order, seen, group, name, url)
 
 def parse_m3u(text, groups, order, seen, prefix):
     lines = [l.strip() for l in text.splitlines()]
+    mapping = {}
+    first_done = False
+
+    def resolve(group_orig):
+        nonlocal first_done
+        if group_orig not in mapping:
+            if not first_done:
+                mapping[group_orig] = prefixed(prefix, group_orig)
+                first_done = True
+            else:
+                mapping[group_orig] = group_orig
+        return mapping[group_orig]
+
     i = 0
     group_orig = "其他"
-    group = prefixed(prefix, group_orig)
+    group = None
     while i < len(lines):
         line = lines[i]
         if line.startswith("#EXTINF"):
             m = GROUP_RE.search(line)
             if m and m.group(1).strip():
                 group_orig = m.group(1).strip()
-                group = prefixed(prefix, group_orig)
+                group = resolve(group_orig)
             # Name is after the last comma on the #EXTINF line.
             name = line.rsplit(",", 1)[-1].strip() if "," in line else ""
             # The next non-empty, non-# line is the URL.
@@ -118,6 +150,8 @@ def parse_m3u(text, groups, order, seen, prefix):
                     break
                 j += 1
             if name and url and group_orig not in EXCLUDE_GROUPS:
+                if group is None:
+                    group = resolve(group_orig)
                 add(groups, order, seen, group, name, url)
             i = j + 1
             continue
