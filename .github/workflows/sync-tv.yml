@@ -1,0 +1,46 @@
+name: Sync TV
+
+# 上游 a2256569/tv 有更新时，定时拉取并合并到 live 分支的 tv.txt。
+# 注意：定时任务只从默认分支（main）上的 workflow 运行，
+# 所以这个文件和 scripts/merge_tv.py 都要放在 main 分支上。
+# 合并结果只写到 live 分支，不动 main 分支已有的文件。
+
+on:
+  schedule:
+    # 每天 02:00 UTC = 北京时间 10:00，跑一次
+    - cron: '0 2 * * *'
+  workflow_dispatch: # 在 Actions 页面也可以手动点 Run workflow 立即跑一次
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Merge upstream sources into tv.txt
+        run: python3 scripts/merge_tv.py /tmp/tv.txt
+
+      - name: Commit to live branch if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin live || true
+          if git show-ref --verify --quiet refs/remotes/origin/live; then
+            git checkout live
+          else
+            git checkout -b live
+          fi
+          cp /tmp/tv.txt ./tv.txt
+          git add tv.txt
+          if git diff --cached --quiet; then
+            echo "No changes, skip commit."
+          else
+            git commit -m "Sync TV: merge upstream sources $(date -u +%Y-%m-%d)"
+            git push origin live
+          fi
